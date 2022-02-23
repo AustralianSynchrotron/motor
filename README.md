@@ -1,3 +1,15 @@
+This is a fork of the epics-motor R7-2-2, to develop for floating point motion controller readback support as needed for the Australian Synchrotron AS2 software stack. 
+
+Controls team, AS2 modifications
+ .xx 15-07-21 asc - Support for scaled floating point controller readback. 
+                    Generalised from Step and Tick concepts to MotorUnit and EncoderUnit respecively.
+                    MRES is generalised to [EGU/MotorUnit] from initial [EGU/Steps]
+                    UREV is EGU/rev
+                    SREV is genaralised to MotorUnit/rev from Steps/rev, hence a floating point variable 
+                    MRES [EGU/MotorUnit] = UREV [EGU/rev] / SREV [MotorUnit/Rev] 
+                    AMIM (Axis Minimal Incremental Motion) is introduced to define Motion Resolution, instead of Motor Resolution carried out by MRES
+
+
 # motor
 [![Build Status](https://travis-ci.org/epics-modules/motor.png)](https://travis-ci.org/epics-modules/motor)
 

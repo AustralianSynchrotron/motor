@@ -248,8 +248,8 @@ recordtype(motor) {
                 special(SPC_MOD)
                 interest(1)
         }
-        field(SREV,DBF_LONG) {
-                prompt("Steps per Revolution")
+        field(SREV,DBF_DOUBLE) {
+                prompt("MotorUnits per revolution")
                 promptgroup(GUI_COMMON)
                 special(SPC_MOD)
                 pp(TRUE)
@@ -257,28 +257,36 @@ recordtype(motor) {
                 initial("200")
         }
         field(UREV,DBF_DOUBLE) {
-                prompt("EGU's per Revolution")
+                prompt("EGUs per revolution")
                 promptgroup(GUI_COMMON)
                 special(SPC_MOD)
                 pp(TRUE)
                 interest(1)
         }
-        field(MRES,DBF_DOUBLE) {
-                prompt("Motor Step Size (EGU)")
+        field(AMIM,DBF_DOUBLE) {
+                prompt("Axis Minimal Incremental Motion (EGU)")
                 promptgroup(GUI_COMMON)
                 special(SPC_MOD)
                 pp(TRUE)
                 interest(1)
         }
         field(ERES,DBF_DOUBLE) {
-                prompt("Encoder Step Size (EGU)")
+                prompt("Encoder scale factor (EGU/EncoderUnit)")
                 promptgroup(GUI_COMMON)
                 special(SPC_MOD)
                 pp(TRUE)
                 interest(1)
         }
+        field(MRES,DBF_DOUBLE) {
+                prompt("Motor scale factor (EGU/MotorUnit)")
+                promptgroup(GUI_COMMON)
+                special(SPC_MOD)
+                pp(TRUE)
+                interest(1)
+        }
+
         field(RRES,DBF_DOUBLE) {
-                prompt("Readback Step Size (EGU")
+                prompt("Readback scale factor (EGU/ReadbackUnit")
                 promptgroup(GUI_COMMON)
                 interest(1)
         }
@@ -533,14 +541,14 @@ recordtype(motor) {
                 special(SPC_NOMOD)
                 interest(1)
         }
-        field(RVAL,DBF_LONG) {
+        field(RVAL,DBF_DOUBLE) {
                 asl(ASL0)
-                prompt("Raw Desired Value (step")
+                prompt("Raw Desired Value (MotorUnits)")
                 special(SPC_MOD)
                 pp(TRUE)
         }
-        field(LRVL,DBF_LONG) {
-                prompt("Last Raw Des Val (steps")
+        field(LRVL,DBF_DOUBLE) {
+                prompt("Last Raw Des Val (MotorUnits)")
                 special(SPC_NOMOD)
                 interest(1)
         }
@@ -567,7 +575,7 @@ recordtype(motor) {
                 prompt("Difference dval-drbv")
                 special(SPC_NOMOD)
         }
-        field(RDIF,DBF_LONG) {
+        field(RDIF,DBF_DOUBLE) {
                 prompt("Difference rval-rrbv")
                 special(SPC_NOMOD)
         }
@@ -575,20 +583,20 @@ recordtype(motor) {
                 prompt("Raw cmnd direction")
                 special(SPC_NOMOD)
         }
-        field(RRBV,DBF_LONG) {
+        field(RRBV,DBF_DOUBLE) {
                 prompt("Raw Readback Value")
                 special(SPC_NOMOD)
         }
-        field(RMP,DBF_LONG) {
+        field(RMP,DBF_DOUBLE) {
                 prompt("Raw Motor Position")
                 special(SPC_NOMOD)
         }
-        field(REP,DBF_LONG) {
+        field(REP,DBF_DOUBLE) {
                 prompt("Raw Encoder Position")
                 special(SPC_NOMOD)
         }
-        field(RVEL,DBF_LONG) {
-                prompt("Raw Velocity")
+        field(RVEL,DBF_DOUBLE) {
+                prompt("Raw Velocity (MotorUntis/s)")
                 promptgroup(GUI_COMMON)
                 special(SPC_NOMOD)
                 interest(1)

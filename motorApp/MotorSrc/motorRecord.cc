@@ -190,6 +190,18 @@ USAGE...        Motor Record Support.
  * .76 04-04-18 rls - If URIP is Yes and RDBL is inaccessible (e.g., CA server is down), do not start
  *                    a new target position move (sans Home search or Jog). 
  * .78 08-21-18 kmp - Reverted .69 stop on RA_PROBLEM true.
+ * 
+ * Australian Synchrotron Controls team, AS2 modifications
+ * .xx 15-07-21 asc - Support for scaled floating point controller readback. 
+ *                    Generalised from Step and Tick concepts to MotorUnit and EncoderUnit respecively.
+ *                    MRES is generalised to [EGU/MotorUnit] from initial [EGU/Steps]
+ *                    UREV is EGU/rev
+ *                    SREV is genaralised to MotorUnit/rev from Steps/rev, hence a floating point variable 
+ *                    MRES [EGU/MotorUnit] = UREV [EGU/rev] / SREV [MotorUnit/Rev] 
+ *                    AMIM (Axis Minimal Incremental Motion) is introduced to define motion resolution, instead of MRES
+ *                    
+ * 						
+ * 
  */                                                          
 
 #define VERSION 7.2
@@ -210,6 +222,7 @@ USAGE...        Motor Record Support.
 #include    "epicsExport.h"
 #include    "errlog.h"
 
+static int motorPrecision = 0;
 volatile int motorRecordDebug = 0;
 extern "C" {epicsExportAddress(int, motorRecordDebug);}
 
@@ -341,6 +354,7 @@ typedef union
         unsigned int M_DMOV     :1;
         unsigned int M_SPMG     :1;
         unsigned int M_RCNT     :1;
+        unsigned int M_AMIM     :1;
         unsigned int M_MRES     :1;
         unsigned int M_ERES     :1;
         unsigned int M_UEIP     :1;
@@ -480,13 +494,13 @@ static void callbackFunc(struct callback *pcb)
 
 Calculate minumum retry deadband (.rdbd) achievable under current
 circumstances, and enforce this minimum value.
-Make RDBD >= MRES.
+Make RDBD >= AMIM.
 ******************************************************************************/
 static void enforceMinRetryDeadband(motorRecord * pmr)
 {
     double min_rdbd;
 
-    min_rdbd = fabs(pmr->mres);
+    min_rdbd = fabs(pmr->amim);
 
     if (pmr->rdbd < min_rdbd)
     {
@@ -637,7 +651,7 @@ static long init_record(dbCommon* arg, int pass)
         MARK(M_VAL);
         pmr->dval = pmr->drbv;
         MARK(M_DVAL);
-        pmr->rval = NINT(pmr->dval / pmr->mres);
+        pmr->rval = pmr->dval / pmr->mres;
         MARK(M_RVAL);
     }
 
@@ -654,7 +668,7 @@ static long init_record(dbCommon* arg, int pass)
     MARK(M_SPMG);
     pmr->diff = pmr->dval - pmr->drbv;
     MARK(M_DIFF);
-    pmr->rdif = NINT(pmr->diff / pmr->mres);
+    pmr->rdif = pmr->diff / pmr->mres;
     MARK(M_RDIF);
     pmr->lval = pmr->val;
     pmr->ldvl = pmr->dval;
@@ -663,7 +677,7 @@ static long init_record(dbCommon* arg, int pass)
 
     if ((pmr->dhlm == pmr->dllm) && (pmr->dllm == 0.0))
         ;
-    else if ((pmr->drbv > pmr->dhlm + pmr->mres) || (pmr->drbv < pmr->dllm - pmr->mres) ||
+    else if ((pmr->drbv > pmr->dhlm + pmr->amim) || (pmr->drbv < pmr->dllm - pmr->amim) ||
              (pmr->dllm > pmr->dhlm))
     {
         pmr->lvio = 1;
@@ -698,7 +712,7 @@ LOGIC:
         Make drive values agree with readback value;
             VAL  <- RBV
             DVAL <- DRBV
-            RVAL <- DVAL converted to motor steps.
+            RVAL <- DVAL converted to motor units.
             DIFF <- RDIF <- 0
     ENDIF
     IF done with either load-position or load-encoder-ratio commands.
@@ -768,7 +782,7 @@ static long postProcess(motorRecord * pmr)
 #endif
         MARK(M_VAL);
         MARK(M_DVAL);
-        pmr->rval = NINT(pmr->dval / pmr->mres);
+        pmr->rval = pmr->dval / pmr->mres;
         MARK(M_RVAL);
         pmr->diff = 0.;
         MARK(M_DIFF);
@@ -836,7 +850,7 @@ static long postProcess(motorRecord * pmr)
     }
     else if (pmr->mip & MIP_JOG_STOP || pmr->mip & MIP_MOVE)
     {
-        if (fabs(pmr->bdst) >=  fabs(pmr->mres))
+        if (fabs(pmr->bdst) >=  fabs(pmr->amim))
         {
             msta_field msta;
 
@@ -941,7 +955,7 @@ static long postProcess(motorRecord * pmr)
         {
             double currpos = pmr->dval / pmr->mres;
             double newpos = bpos + pmr->frac * (currpos - bpos);
-            pmr->rval = NINT(newpos);
+            pmr->rval = newpos;
             WRITE_MSG(MOVE_ABS, &newpos);
         }
         WRITE_MSG(GO, NULL);
@@ -1508,12 +1522,12 @@ LOGIC:
             .....
             .....
         ELSE
-            Set the [encoder (ticks) / motor (steps)] ratio to unity (1).
+            Set the [encoder (EncoderUnit) / motor (MotorUnit)] ratio to unity (1).
             Set RES <- MRES.
         ENDIF
         - call enforceMinRetryDeadband().
         IF MSTA indicates an encoder is present.
-            Send the ticks/steps ratio motor command.
+            Send the EncoderUnits/MotorUnits ratio motor command.
         ENDIF
         IF the SET position field is true.
             Set the PP field TRUE and send the update info. motor command.
@@ -1693,7 +1707,7 @@ LOGIC:
                         Set local position variable based on absolute position.
                     ENDIF
                 ELSE IF move is in preferred direction (preferred_dir==True),
-                        AND, |DVAL - LDVL| <= |BDST + MRES|.
+                        AND, |DVAL - LDVL| <= |BDST + AMIM|.
                     Initialize local velocity and acceleration variables to
                     backlash values.
                     IF use relative positioning indicator is TRUE.
@@ -2173,7 +2187,7 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
             MARK(M_DIFF);
         }
 
-        pmr->rdif = NINT(pmr->diff / pmr->mres);
+        pmr->rdif = pmr->diff / pmr->mres;
         MARK(M_RDIF);
         if (set && !pmr->igset)
         {
@@ -2200,9 +2214,20 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
             bool use_rel, preferred_dir, too_small;
             double relpos = pmr->diff / pmr->mres;
             double relbpos = ((pmr->dval - pmr->bdst) - pmr->drbv) / pmr->mres;
-            double rbdst1 = 1.0 + (fabs(pmr->bdst) / fabs(pmr->mres));
-            long rdbdpos = NINT(pmr->rdbd / fabs(pmr->mres)); /* retry deadband steps */
+            
+            double amim_raw = pmr->amim/pmr->mres;
+
+            double rbdst1 = amim_raw + (fabs(pmr->bdst) / fabs(pmr->mres));
+            double rdbdpos = pmr->rdbd / fabs(pmr->mres); /* retry deadband MotorUnits */
             long rpos, npos, rtnstat;
+
+            //Variables to calculate readback precision
+            int motorPrecision_i = pmr->amim;
+            double motorPrecision_d = pmr->amim;
+            double diff;
+            char pattern[100];
+            char buf[100];
+
             msta_field msta;
             msta.All = pmr->msta;
 
@@ -2221,18 +2246,42 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
             pmr->val = pmr->dval * dir + pmr->off;
             if (pmr->val != pmr->lval)
                 MARK(M_VAL);
-            pmr->rval = NINT(pmr->dval / pmr->mres);
+            pmr->rval = pmr->dval / pmr->mres;
             if (pmr->rval != pmr->lrvl)
                 MARK(M_RVAL);
 
             /* Don't move if we're within retry deadband. */
 
-            rpos = NINT(rbvpos);
-            npos = NINT(newpos);
+            //Determine motor precision from AMIM
+            motorPrecision = 0;
+            while (motorPrecision_d) {
+               //Increment digit count
+               motorPrecision++;
+               //Next digit
+               motorPrecision_d *= 10.0;
+               motorPrecision_i = motorPrecision_d;
+               motorPrecision_d -= motorPrecision_i;
+            }
+            //Determine motor precision pattern
+            sprintf(pattern, "%%.%dlf", motorPrecision);
+            //Set diff to determined precision
+            diff = fabs(newpos - rbvpos);
+            sprintf(buf, pattern, diff);
+            diff = strtod(buf, NULL);
+            //Set newpos to determined precision
+            sprintf(buf, pattern, newpos);
+            newpos = strtod(buf, NULL);
+            //Set rbvpos to determined precision
+            sprintf(buf, pattern, rbvpos);
+            rbvpos = strtod(buf, NULL);
+            //Set rdbdpos to determined precision
+            sprintf(buf, pattern, rdbdpos);
+            rdbdpos = strtod(buf, NULL);
+
             too_small = false;
             if ((pmr->mip & MIP_RETRY) == 0)
             {
-                if (abs(npos - rpos) < 1)
+                if (diff < rdbdpos)
                     too_small = true;
                 if (!too_small)
                 {
@@ -2247,7 +2296,7 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
                     }
                 }
             }
-            else if (abs(npos - rpos) < rdbdpos)
+            else if (diff < rdbdpos)
                 too_small = true;
 
             if (too_small == true)
@@ -2281,12 +2330,12 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
                 double factor = (pmr->rtry - pmr->rcnt + 1.0) / pmr->rtry;
                 
                 relpos *= factor;
-                if (fabs(relpos) < 1.0)
-                    relpos = (relpos > 0.0) ? 1.0 : -1.0;
+                if (fabs(relpos) < amim_raw)
+                    relpos = (relpos > 0.0) ? amim_raw : -amim_raw;
                 
                 relbpos *= factor;
-                if (fabs(relbpos) < 1.0)
-                    relbpos = (relbpos > 0.0) ? 1.0 : -1.0;
+                if (fabs(relbpos) < amim_raw)
+                    relbpos = (relbpos > 0.0) ? amim_raw : -amim_raw;
             }
             else if (pmr->rmod == motorRMOD_G) /* Do geometric sequence retries. */
             {
@@ -2295,12 +2344,12 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
                 factor = 1 / pow(2.0, (pmr->rcnt - 1));
 
                 relpos *= factor;
-                if (fabs(relpos) < 1.0)
-                    relpos = (relpos > 0.0) ? 1.0 : -1.0;
+                if (fabs(relpos) < amim_raw)
+                    relpos = (relpos > 0.0) ? amim_raw : -amim_raw;
                 
                 relbpos *= factor;
-                if (fabs(relbpos) < 1.0)
-                    relbpos = (relbpos > 0.0) ? 1.0 : -1.0;
+                if (fabs(relbpos) < amim_raw)
+                    relbpos = (relbpos > 0.0) ? amim_raw : -amim_raw;
             }
             else if (pmr->rmod == motorRMOD_I) /* DC motor like In-position retries. */
                 return(OK);
@@ -2397,7 +2446,7 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
                  * since move is in preferred direction (preferred_dir==ON),
                  * AND, backlash acceleration and velocity are the same as slew values
                  * (BVEL == VELO, AND, BACC == ACCL). */
-                if ((fabs(pmr->bdst) <  fabs(pmr->mres)) ||
+                if ((fabs(pmr->bdst) <  fabs(pmr->amim)) ||
                     (preferred_dir == true && pmr->bvel == pmr->velo &&
                      pmr->bacc == pmr->accl))
                 {
@@ -2410,7 +2459,7 @@ static RTN_STATUS do_work(motorRecord * pmr, CALLBACK_VALUE proc_ind)
                 }
                 /* IF move is in preferred direction, AND, current position is within backlash range. */
                 else if ((preferred_dir == true) &&
-                         ((use_rel == true  && ((pmr->bdst >= 0 && relbpos <= 1.0) || (pmr->bdst < 0 && relbpos >= 1.0))) ||
+                         ((use_rel == true  && ((pmr->bdst >= 0 && relbpos <= amim_raw) || (pmr->bdst < 0 && relbpos >= amim_raw))) ||
                           (use_rel == false && (fabs(newpos - currpos) <= rbdst1))
                          )
                         )
@@ -3068,6 +3117,17 @@ pidcof:
             return(ERROR);      /* Prevent record processing. */
         }
         break;
+ 
+    //Axis Minimal Incremental Motion (Step Size for open loop steppers)
+    case motorRecordAMIM:
+        MARK(M_AMIM);           /* MARK it so we'll remember to tell device
+                                 * support */
+        /* reject if too small */
+        if (fabs(pmr->amim) < 1.e-9)
+        {
+           pmr->amim = 1.e-9;
+        }
+        break;
 
     default:
         break;
@@ -3160,7 +3220,7 @@ static long get_units(DBADDR *paddr, char *units)
         break;
 
     case motorRecordSREV:
-        strcpy(s, "steps/rev");
+        strcpy(s, "MU/rev");
         break;
 
     case motorRecordUREV:
@@ -3664,7 +3724,7 @@ static void process_motor_info(motorRecord * pmr, bool initcall)
         }
         else
         {
-            pmr->rrbv = NINT((rdblvalue * pmr->rres) / pmr->mres);
+            pmr->rrbv = (rdblvalue * pmr->rres) / pmr->mres;
             pmr->drbv = pmr->rrbv * pmr->mres;
         }
     }
@@ -3729,7 +3789,7 @@ static void process_motor_info(motorRecord * pmr, bool initcall)
 
     pmr->diff = pmr->dval - pmr->drbv;
     MARK(M_DIFF);
-    pmr->rdif = NINT(pmr->diff / pmr->mres);
+    pmr->rdif = pmr->diff / pmr->mres;
     MARK(M_RDIF);
 }
 
@@ -3741,9 +3801,9 @@ static void load_pos(motorRecord * pmr)
 
     pmr->ldvl = pmr->dval;
     pmr->lval = pmr->val;
-    if (pmr->rval != (epicsInt32) NINT(newpos))
+    if (pmr->rval != newpos)
         MARK(M_RVAL);
-    pmr->lrvl = pmr->rval = (epicsInt32) NINT(newpos);
+    pmr->lrvl = pmr->rval = newpos;
 
     if (pmr->foff)
     {
@@ -3853,14 +3913,14 @@ static void check_speed_and_resolution(motorRecord * pmr)
      * sure things are sane.
      */
 
-    /* SREV (steps/revolution) must be sane. */
+    /* SREV (MotorUnits/revolution) must be sane. */
     if (pmr->srev <= 0)
     {
         pmr->srev = 200;
         MARK_AUX(M_SREV);
     }
 
-    /* UREV (EGU/revolution) <--> MRES (EGU/step) */
+    /* UREV (EGU/revolution) <--> MRES (EGU/MotorUnits) */
     if (pmr->urev != 0.0)
     {
         pmr->mres = pmr->urev / pmr->srev;
@@ -4146,7 +4206,7 @@ static void syncTargetPosition(motorRecord *pmr)
             printf("%s: syncTargetPosition: error reading RDBL link.\n", pmr->name);
         else
         {
-            pmr->rrbv = NINT((rdblvalue * pmr->rres) / pmr->mres);
+            pmr->rrbv = (rdblvalue * pmr->rres) / pmr->mres;
             pmr->drbv = pmr->rrbv * pmr->mres;
         }
     }
@@ -4164,7 +4224,7 @@ static void syncTargetPosition(motorRecord *pmr)
     MARK(M_VAL);
     pmr->dval = pmr->ldvl = pmr->drbv;
     MARK(M_DVAL);
-    pmr->rval = pmr->lrvl = NINT(pmr->dval / pmr->mres);
+    pmr->rval = pmr->lrvl = pmr->dval / pmr->mres;
     MARK(M_RVAL);
 }
 

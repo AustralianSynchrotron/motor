@@ -169,7 +169,7 @@ static void init_controller(struct motorRecord *pmr, asynUser *pasynUser )
        which is one reason why I have separated it into another routine */
     motorAsynPvt *pPvt = (motorAsynPvt *)pmr->dpvt;
     double position = pPvt->status.position;
-    double rdbd = (fabs(pmr->rdbd) < fabs(pmr->mres) ? fabs(pmr->mres) : fabs(pmr->rdbd) );
+    double rdbd = (fabs(pmr->rdbd) < fabs(pmr->amim) ? fabs(pmr->amim) : fabs(pmr->rdbd) );
     double encRatio[2] = {pmr->mres, pmr->eres};
     int use_rel = (pmr->rtry != 0 && pmr->rmod != motorRMOD_I && (pmr->ueip || pmr->urip));
     int dval_non_zero_pos_near_zero = (fabs(pmr->dval) > rdbd) &&
@@ -432,29 +432,24 @@ CALLBACK_VALUE update_values(struct motorRecord * pmr)
         pmr->name, pPvt->needUpdate);
     if ( pPvt->needUpdate )
     {
-        epicsInt32 rawvalue;
-
-        rawvalue = (epicsInt32)floor(pPvt->status.position + 0.5);
-        if (pmr->rmp != rawvalue)
+        if (pmr->rmp != pPvt->status.position)
         {
-            pmr->rmp = rawvalue;
+            pmr->rmp = pPvt->status.position;
             db_post_events(pmr, &pmr->rmp, DBE_VAL_LOG);
         }
 
-        rawvalue = (epicsInt32)floor(pPvt->status.encoderPosition + 0.5);
-        if (pmr->rep != rawvalue)
+        if (pmr->rep != pPvt->status.encoderPosition)
         {
-            pmr->rep = rawvalue;
+            pmr->rep = pPvt->status.encoderPosition;
             db_post_events(pmr, &pmr->rep, DBE_VAL_LOG);
         }
 
         /* Don't post MSTA changes here; motor record's process() function does efficent MSTA posting. */
         pmr->msta = pPvt->status.status;
 
-        rawvalue = (epicsInt32)floor(pPvt->status.velocity);
-        if (pmr->rvel != rawvalue)
+        if (pmr->rvel != pPvt->status.velocity)
         {
-            pmr->rvel = rawvalue;
+            pmr->rvel = pPvt->status.velocity;
             db_post_events(pmr, &pmr->rvel, DBE_VAL_LOG);
         }
 
